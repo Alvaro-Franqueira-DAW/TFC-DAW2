@@ -1,153 +1,68 @@
-/**
- * Dice Game Component
- * Implements a classic dice game with multiple betting options:
- * - Even/Odd sum betting
- * - Specific sum betting with different payouts
- * Features include:
- * - Animated dice rolling
- * - Real-time balance updates
- * - Bet history tracking
- * - Visual feedback for wins and losses
- * - Confetti animation for wins
- */
+// src/components/games/DiceGame.js
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Button, Form, Card, Alert, Badge, Spinner, InputGroup, FormControl } from 'react-bootstrap';
-import { FaDice, FaDiceOne, FaDiceTwo, FaDiceThree, FaDiceFour, FaDiceFive, FaDiceSix, FaHistory, FaDollarSign } from 'react-icons/fa';
-import { useAuth } from '../../context/AuthContext';
-import diceService from '../../services/diceService';
-import betService from '../../services/betService';
+import { FaDice, FaDiceOne, FaDiceTwo, FaDiceThree, FaDiceFour, FaDiceFive, FaDiceSix, FaHistory, FaDollarSign, FaUser, FaChartBar } from 'react-icons/fa';
+import { useAuth } from '../../context/AuthContext'; // Correct path assumed
+import diceService from '../../services/diceService'; // Correct path assumed
+import betService from '../../services/betService';   // Correct path assumed
+import { Link } from 'react-router-dom';
+import flyingChips from '../images/flying-chips.png'; // Adjust the path as needed
 import confetti from 'canvas-confetti';
-import '../../assets/styles/DiceGame.css';
-import gameService from '../../services/gameService';
-
-// ===== Constants =====
-
-/**
- * Minimum duration for dice roll animation in milliseconds
- */
-const MIN_ROLL_DURATION = 2000;
-
-/**
- * Payout multipliers for specific sum bets
- * Higher risk = higher payout
- */
-const PAYOUT_MULTIPLIERS = {
-  7: 5.0,   // Most common sum
-  6: 6.0,   // Common sum
-  8: 6.0,   // Common sum
-  5: 8.0,   // Less common
-  9: 8.0,   // Less common
-  4: 10.0,  // Rare
-  10: 10.0, // Rare
-  3: 15.0,  // Very rare
-  11: 15.0, // Very rare
-  2: 30.0,  // Rarest
-  12: 30.0  // Rarest
-};
+import bigWin from '../images/bigwin.png'; 
 
 const DiceGame = () => {
-  // ===== Hooks =====
-  const { user, updateUserBalance } = useAuth();
-  
-  // ===== State =====
-  const [userBalance, setUserBalance] = useState(0);
+  const { user, updateUserBalance } = useAuth(); // Get user and updater function
+  const [userBalance, setUserBalance] = useState(0); // Start with 0, update in useEffect
   const [betAmount, setBetAmount] = useState(5);
-  const [betType, setBetType] = useState('evenodd');
-  const [betValue, setBetValue] = useState('even');
+  const [betType, setBetType] = useState('parimpar');
+  const [betValue, setBetValue] = useState('par');
   const [diceValues, setDiceValues] = useState([1, 1]);
   const [isRolling, setIsRolling] = useState(false);
   const [resultMessage, setResultMessage] = useState({ text: '', type: '' });
-  const [messageVisible, setMessageVisible] = useState(false);
   const [history, setHistory] = useState([]);
-  const [clickPosition, setClickPosition] = useState({ x: 0.5, y: 0.5 });
-  const [gameInfo, setGameInfo] = useState(null);
+  // --- Effects ---
 
-  // ===== Effects =====
-  
-  /**
-   * Load game information on component mount
-   */
-  useEffect(() => {
-    const fetchGameInfo = async () => {
-      try {
-        const gameData = await gameService.getGameById(2);
-        setGameInfo(gameData);
-      } catch (err) {
-        console.error('Error loading game info:', err);
-        setGameInfo({
-          name: 'Dice Game',
-          description: 'Try your luck with our classic Dice game!'
-        });
-      }
-    };
-    fetchGameInfo();
-  }, []);
-
-  /**
-   * Initialize user balance and load bet history
-   */
+  // Initialize balance from context ONCE or when user ID changes
   useEffect(() => {
     if (user?.id) {
+      // Properly handle the Promise returned by getUserBalance
       betService.getUserBalance(user.id)
         .then(balance => {
-          const numericBalance = typeof balance === 'number' ? balance : (user.balance || 0);
+          console.log("Initializing balance from user context:", balance);
+          // If balance is a number, use it; otherwise, use user.balance or 0
+          const numericBalance = typeof balance === 'number' ? balance : 
+                               (user.balance || 0);
           setUserBalance(numericBalance);
           loadUserBetHistory();
         })
         .catch(error => {
           console.error("Error loading user balance:", error);
+          // Fallback to user.balance from context if available
           setUserBalance(user.balance || 0);
         });
     } else {
       setUserBalance(0);
       setHistory([]);
     }
-  }, [user?.id]);
+  }, [user?.id]); // Depend only on user.id to avoid loops
 
-  /**
-   * Animate dice rolling
-   */
+  // Log context user changes for debugging
   useEffect(() => {
-    let animationInterval;
-    if (isRolling) {
-      animationInterval = setInterval(() => {
-        const randomDice1 = Math.floor(Math.random() * 6) + 1;
-        const randomDice2 = Math.floor(Math.random() * 6) + 1;
-        setDiceValues([randomDice1, randomDice2]);
-      }, 300);
-    }
-    return () => {
-      if (animationInterval) clearInterval(animationInterval);
-    };
-  }, [isRolling]);
+    console.log("Auth Context User State:", user);
+  }, [user]);
 
-  /**
-   * Manage result message visibility
-   */
-  useEffect(() => {
-    if (resultMessage.text) {
-      setMessageVisible(true);
-      const visibilityTimer = setTimeout(() => {
-        setMessageVisible(false);
-      }, 5000);
-      return () => clearTimeout(visibilityTimer);
-    }
-  }, [resultMessage]);
+  // --- Data Fetching ---
 
-  // ===== Service Functions =====
-  
-  /**
-   * Load user's recent bet history
-   */
   const loadUserBetHistory = () => {
     if (!user?.id) return;
     
     try {
+      // Use Promise then/catch instead of async/await
       betService.getUserGameBets(user.id, 2)
         .then(bets => {
           if (Array.isArray(bets)) {
             const sortedBets = bets
-              .sort((a, b) => new Date(b.betDate) - new Date(a.betDate))
+              .sort((a, b) => new Date(b.fechaApuesta) - new Date(a.fechaApuesta))
               .slice(0, 5);
             setHistory(sortedBets);
           } else {
@@ -166,203 +81,195 @@ const DiceGame = () => {
     }
   };
 
-  // ===== Event Handlers =====
-  
-  /**
-   * Handle bet amount changes
-   * @param {Event} e - Change event from input
-   */
+  // --- Handlers ---
   const handleBetAmountChange = (e) => {
     let value = parseFloat(e.target.value);
     if (isNaN(value) || value <= 0) value = '';
-    else if (value > userBalance) value = userBalance;
+    else if (value > userBalance) value = userBalance; // Cap at user balance
     setBetAmount(value);
   };
 
-  /**
-   * Handle bet type changes
-   * @param {Event} e - Change event from select
-   */
   const handleBetTypeChange = (e) => {
     const type = e.target.value;
     setBetType(type);
-    if (type === 'evenodd') {
-      setBetValue('even');
-    } else if (type === 'number') {
-      setBetValue('2');
+    // Reset bet value based on new type
+    if (type === 'parimpar') {
+      setBetValue('par');
+    } else if (type === 'numero') {
+      setBetValue('2'); // Default to sum 2
     }
   };
 
-  /**
-   * Handle bet value changes
-   * @param {Event} e - Change event from select
-   */
   const handleBetValueChange = (e) => {
     setBetValue(e.target.value);
   };
 
-  // ===== Game Logic Functions =====
-  
-  /**
-   * Place bet and roll dice
-   * Handles the main game flow including:
-   * - Validation
-   * - Balance updates
-   * - Dice rolling animation
-   * - Result processing
-   * - Win/loss handling
-   */
+  // --- Core Game Logic ---
+
   const placeBetAndRoll = () => {
-    const currentBalanceBeforeBet = userBalance;
-    
-    // Validate bet
+    const currentBalanceBeforeBet = userBalance; // Capture balance before bet
     if (!betAmount || betAmount <= 0 || betAmount > currentBalanceBeforeBet) {
       setResultMessage({ text: 'Invalid bet amount or insufficient balance.', type: 'danger' });
       return;
     }
-    
     if (!user?.id) {
       setResultMessage({ text: 'User not identified. Cannot place bet.', type: 'danger' });
       return;
     }
 
-    // Start rolling animation
     setIsRolling(true);
     setResultMessage({ text: 'Rolling the dice...', type: 'info' });
 
-    // Prepare bet data
+    // Dice will be rolled by the backend
+    // We'll update the dice display when we get the response
+
     const betData = {
-      userId: user.id,
-      gameId: 2, // Dice game ID
-      amount: betAmount,
-      type: betType,
-      betValue: betValue,
-      winningValue: null
+      usuarioId: user.id,
+      juegoId: 2, // Hardcoded game ID for Dice game
+      cantidad: betAmount,
+      tipo: betType,
+      valorApostado: betValue,
+      valorGanador: null
     };
+    console.log('Placing bet with data:', betData, `Current local balance: ${currentBalanceBeforeBet}`);
 
-    // Record start time for minimum animation duration
-    const rollStartTime = Date.now();
-
-    // Process bet
-    diceService.play(betData)
+    // Use Promise chain instead of async/await
+  diceService.jugar(betData)
       .then(response => {
         const { diceResults, resolvedBet } = response;
-        
+        // Log the RAW response from the backend
+        console.log('Backend RAW response:', response);
+        // Check if the response is valid
         if (!response || !resolvedBet) {
-          throw new Error('Invalid response from backend');
+          console.error('Invalid response from backend:', response);
+          setResultMessage({ text: 'Invalid response from backend.', type: 'danger' });
+          return;
         }
 
-        // Get backend balance and win/loss amount
-        const backendNewBalance = resolvedBet.userBalance;
+        // Check for user data in the DTO
+        console.log('Parsed Response:', { diceResults, resolvedBet });
+        console.log('User data within resolvedBet - ID:', resolvedBet.usuarioId, 'Balance:', resolvedBet.userBalance);
+
+        // Use the userBalance field from the ApuestaDTO - this is the authoritative balance from the backend
+        let backendNewBalance = resolvedBet.userBalance;
+        
+        // Get the winloss value directly from the backend response
         const winlossAmount = resolvedBet.winloss;
+        
+        console.log(`Win/Loss amount from backend: ${winlossAmount}`);
 
-        // Validate backend balance
-        if (typeof backendNewBalance !== 'number' || isNaN(backendNewBalance)) {
-          throw new Error("Backend returned invalid balance value");
+        if (backendNewBalance === undefined || backendNewBalance === null || typeof backendNewBalance !== 'number' || isNaN(backendNewBalance)) {
+            console.error(`CRITICAL: Backend DTO missing or has invalid balance! Value: ${backendNewBalance}`);
+            throw new Error("Backend returned invalid balance value in DTO.");
         }
 
-        // Calculate remaining animation time
-        const elapsedTime = Date.now() - rollStartTime;
-        const remainingTime = Math.max(0, MIN_ROLL_DURATION - elapsedTime);
+        console.log(`Balance Check: Before Bet (local) = ${currentBalanceBeforeBet}, After Bet (backend DTO) = ${backendNewBalance}`);
+        console.log(`Win/Loss calculation: ${winlossAmount > 0 ? 'Won' : 'Lost'} ${Math.abs(winlossAmount)}`);
 
-        // Process result after animation
-        setTimeout(() => {
-          // Update dice display
-          setDiceValues(diceResults);
-          setUserBalance(backendNewBalance);
+        // Update dice display
+        setDiceValues(diceResults);
 
-          // Calculate total and prepare message
-          const totalResult = diceResults[0] + diceResults[1];
-          const baseMessage = `Rolled: ${diceResults[0]} and ${diceResults[1]} (total: ${totalResult}). `;
+        // Update balance: Local state AND Context using backend's authoritative value
+        setUserBalance(backendNewBalance);
+        /*if (updateUserBalance) {
+            console.log(`Calling context updateUserBalance with: ${backendNewBalance}`);
+            updateUserBalance(backendNewBalance);
+        } else {
+            console.warn("AuthContext does not provide updateUserBalance function!");
+        }*/
 
-          // Handle win/loss
-          if (resolvedBet.status === 'WON') {
-            // Trigger confetti animation
-            confetti({
-              particleCount: 200,
-              spread: 100,
-              origin: { x: clickPosition.x, y: clickPosition.y }
-            });
+// Update result message (use resolvedBet which is ApuestaDTO)
+const totalResult = diceResults[0] + diceResults[1];
+const baseMessage = `Rolled: ${diceResults[0]} and ${diceResults[1]} (total: ${totalResult}). `;
 
-            // Calculate payout explanation
-            let payoutExplanation = '';
-            if (resolvedBet.type === 'evenodd') {
-              payoutExplanation = ` (95% of your $${betAmount} bet)`;
-            } else if (resolvedBet.type === 'number') {
-              const odds = PAYOUT_MULTIPLIERS[totalResult] || 0;
-              payoutExplanation = ` (${odds}x your $${betAmount} bet)`;
-            }
 
-            setResultMessage({
-              text: baseMessage + `You won $${winlossAmount.toFixed(2)}!${payoutExplanation}`,
-              type: 'success'
-            });
-          } else {
-            setResultMessage({
-              text: baseMessage + `You lost $${betAmount.toFixed(2)}.`,
-              type: 'danger'
-            });
-          }
+const betAmount = resolvedBet.cantidad;
 
-          // Refresh history and end rolling state
-          setTimeout(loadUserBetHistory, 1500);
-          setIsRolling(false);
-        }, remainingTime);
-      })
+// Add explanation of the payout calculation based on bet type
+let payoutExplanation = '';
+if (resolvedBet.tipo === 'parimpar') {
+    // For even/odd bets, payout is 95% of bet amount
+    payoutExplanation = ` (95% of your $${betAmount} bet)`;
+} else if (resolvedBet.tipo === 'numero') {
+    // For number bets, payout depends on the number (using odds table from backend)
+    const odds = totalResult === 7 ? 5.0 : 
+                 (totalResult === 6 || totalResult === 8) ? 6.0 :
+                 (totalResult === 5 || totalResult === 9) ? 8.0 :
+                 (totalResult === 4 || totalResult === 10) ? 10.0 :
+                 (totalResult === 3 || totalResult === 11) ? 15.0 :
+                 (totalResult === 2 || totalResult === 12) ? 30.0 : 0;
+    payoutExplanation = ` (${odds}x your $${betAmount} bet)`;
+} else if (resolvedBet.tipo === 'mitad') {
+    // For half bets, payout is 95% of bet amount
+    payoutExplanation = ` (95% of your $${betAmount} bet)`;
+}
+
+if (resolvedBet.estado === 'GANADA') {
+  // Trigger confetti animation
+  confetti({
+    particleCount: 200,
+    spread: 100,
+    origin: { y: 0.6 },// center confetti after roll button
+  });
+  
+    setResultMessage({
+        text: baseMessage + `You won $${winLossDisplayAmount.toFixed(2)}!${payoutExplanation}`, // Display the actual profit with explanation
+        type: 'success'
+    });
+} else {
+    setResultMessage({
+        text: baseMessage + `You lost $${betAmount.toFixed(2)}.`, // Display the actual amount lost (betAmount)
+        type: 'danger'
+    });
+}
+
+// Refresh history
+setTimeout(loadUserBetHistory, 1500);
+  })
       .catch(error => {
-        console.error('Error during dice bet:', error);
+        console.error('CRITICAL ERROR during dice bet:', error);
+        // Provide more specific feedback if possible
         let userMessage = `Error: ${error.message || 'Failed to place bet.'}`;
         if (error.response?.data?.message) {
           userMessage = `Error: ${error.response.data.message}`;
         }
         setResultMessage({ text: userMessage, type: 'danger' });
+      })
+      .finally(() => {
         setIsRolling(false);
       });
   };
 
-  // ===== Helper Functions =====
-  
-  /**
-   * Get dice icon component based on value
-   * @param {number} value - Dice value (1-6)
-   * @returns {JSX.Element} Dice icon component
-   */
+  // --- UI Rendering ---
+
   const getDiceIcon = (value) => {
-    const iconStyle = { 
-      color: 'white',
-      fontSize: isRolling ? '60px' : '50px',
-      transition: 'font-size 0.3s'
-    }; 
+    const iconStyle = { color: 'white' }; 
 
     switch (value) {
-      case 1: return <FaDiceOne size={isRolling ? 60 : 50} style={iconStyle} />;
-      case 2: return <FaDiceTwo size={isRolling ? 60 : 50} style={iconStyle} />;
-      case 3: return <FaDiceThree size={isRolling ? 60 : 50} style={iconStyle} />;
-      case 4: return <FaDiceFour size={isRolling ? 60 : 50} style={iconStyle} />;
-      case 5: return <FaDiceFive size={isRolling ? 60 : 50} style={iconStyle} />;
-      case 6: return <FaDiceSix size={isRolling ? 60 : 50} style={iconStyle} />;
-      default: return <FaDice size={isRolling ? 60 : 50} style={iconStyle} />;
+      case 1: return <FaDiceOne size={50} style={iconStyle} />;
+      case 2: return <FaDiceTwo size={50} style={iconStyle} />;
+      case 3: return <FaDiceThree size={50} style={iconStyle} />;
+      case 4: return <FaDiceFour size={50} style={iconStyle} />;
+      case 5: return <FaDiceFive size={50} style={iconStyle} />;
+      case 6: return <FaDiceSix size={50} style={iconStyle} />;
+      default: return <FaDice size={50} style={iconStyle} />; // Fallback
     }
   };
 
-  /**
-   * Render bet value input based on bet type
-   * @returns {JSX.Element} Bet value input component
-   */
   const renderBetValueInput = () => {
     switch (betType) {
-      case 'evenodd':
+      case 'parimpar': // Even/Odd
         return (
           <Form.Select value={betValue} onChange={handleBetValueChange} disabled={isRolling}>
-            <option value="even">Even Sum</option>
-            <option value="odd">Odd Sum</option>
+            <option value="par">Even Sum</option>
+            <option value="impar">Odd Sum</option>
           </Form.Select>
         );
-      case 'number':
+      case 'numero': // Specific sum
         return (
           <Form.Select value={betValue} onChange={handleBetValueChange} disabled={isRolling}>
             {Array.from({ length: 11 }, (_, i) => i + 2).map(num => (
-              <option key={num} value={String(num)}>{num}</option>
+              <option key={num} value={String(num)}>{num}</option> // Use string value
             ))}
           </Form.Select>
         );
@@ -371,10 +278,7 @@ const DiceGame = () => {
     }
   };
 
-  /**
-   * Safely format balance for display
-   * @returns {string} Formatted balance string
-   */
+  // This is a safe way to handle the balance display
   const safeDisplayBalance = () => {
     if (user?.id && typeof userBalance === 'number') {
       return `$${userBalance.toFixed(2)}`;
@@ -382,47 +286,16 @@ const DiceGame = () => {
     return '$0.00';
   };
 
-  // ===== Render Functions =====
-  
+  // Component Return (JSX)
   return (
-    <Container className="py-4 dice-body">
-      {/* Result Message */}
-      {resultMessage.text && (
-        <div 
-          className={`floating-message alert alert-${resultMessage.type}`}
-          style={{
-            position: 'fixed',
-            bottom: messageVisible ? '30px' : '-100px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 1050,
-            minWidth: '300px',
-            maxWidth: '80%',
-            boxShadow: '0 8px 16px rgba(0,0,0,0.5)',
-            textAlign: 'center',
-            padding: '15px',
-            borderRadius: '10px',
-            opacity: messageVisible ? 0.95 : 0,
-            fontWeight: 'bold',
-            border: '2px solid',
-            transition: 'all 0.8s ease-in-out',
-            borderColor: resultMessage.type === 'success' ? 'var(--success-color)' : 
-                         resultMessage.type === 'danger' ? 'var(--danger-color)' : 
-                         resultMessage.type === 'warning' ? '#f59e0b' : '#0d6efd'
-          }}
-        >
-          {resultMessage.text}
-        </div>
-      )}
-
-      {/* Game Title */}
-      <div className="header-card">
-        <h1>
-          {gameInfo?.name || 'Dice Game'}
-        </h1>
-        <p>
-          {gameInfo?.description || 'Try your luck with our classic dice game! Roll the dice and win big.'}
-        </p>
+    <Container className="py-4">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+          <FaDice className="me-2" /> Casino Dice
+        </h2>
+        <Link to="/profile" className="btn btn-outline-primary">
+          <FaChartBar className="me-2" /> View My Statistics
+        </Link>
       </div>
 
       <Row className="justify-content-center">
@@ -431,28 +304,69 @@ const DiceGame = () => {
           <Card className="mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <span>Place Your Bet</span>
+              {/* Safe balance display */}
               <Badge bg="success" className="p-2 fs-6">
                 <FaDollarSign /> Balance: {safeDisplayBalance()}
               </Badge>
             </Card.Header>
             <Card.Body>
-              {/* Dice Display */}
+              {/* Dice Display - Apply color via getDiceIcon */}
               <div className="d-flex justify-content-center gap-4 my-4">
                 {diceValues.map((value, index) => (
-                  <div 
-                    key={index} 
-                    className={isRolling ? 'dice-rolling' : ''}
-                    style={{ transition: 'opacity 0.2s, transform 0.3s' }}
-                  >
+                  <div key={index} style={{ opacity: isRolling ? 0.5 : 1, transition: 'opacity 0.2s' }}>
                     {getDiceIcon(value)}
                   </div>
                 ))}                
               </div>
 
+              {/* Result Message */}
+                  {resultMessage.text && (
+                    <div className="result-message-container mt-3 text-center">
+                      {resultMessage.type === 'success' && (
+                        <>
+                          {betType === 'numero' ? (
+                            <img
+                              src={bigWin}
+                              alt="Big Win"
+                              className="winning-image"
+                            />
+                          ) : (
+                            <img
+                              src={flyingChips}
+                              alt="Winning Chips"
+                              className="winning-image"
+                            />
+                          )}
+                        </>
+                      )}
+                      <Alert variant={resultMessage.type}>
+                        {resultMessage.text}
+                      </Alert>
+                      
+                    </div>
+                  )}
+
               {/* Bet Form */}
               <Form className="text-white" onSubmit={(e) => { e.preventDefault(); placeBetAndRoll(); }}>
+                                {/* Roll Button */}
+                <Button
+                  variant="primary"
+                  className="w-100 mt-3"
+                  style={{ marginBottom: '20px' }}
+                  type="submit"
+                  disabled={isRolling || !betAmount || betAmount <= 0 || betAmount > userBalance}
+                >
+                  {isRolling ? (
+                    <>
+                      <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                      Rolling...
+                    </>
+                  ) : (
+                    'Roll Dice'
+                  )}
+                </Button>
                 {/* Bet Amount */}
-                <Form.Group as={Row} className="mb-3 align-items-center">
+                <Form.Group as={Row} className="mb-3 align-items-center ">
                   <Form.Label column sm={4}>Amount:</Form.Label>
                   <Col sm={8}>
                     <InputGroup>
@@ -463,7 +377,7 @@ const DiceGame = () => {
                         onChange={handleBetAmountChange}
                         min="1"
                         step="1"
-                        max={userBalance}
+                        max={userBalance} // Use local state for max check
                         isInvalid={betAmount > userBalance}
                         disabled={isRolling}
                         placeholder="Enter bet amount"
@@ -478,8 +392,8 @@ const DiceGame = () => {
                   <Form.Label column sm={4}>Bet Type:</Form.Label>
                   <Col sm={8}>
                     <Form.Select value={betType} onChange={handleBetTypeChange} disabled={isRolling}>
-                      <option value="evenodd">Odd/Even Sum</option>
-                      <option value="number">Specific Sum</option>
+                      <option value="parimpar">Odd/Even Sum</option>
+                      <option value="numero">Specific Sum</option>
                     </Form.Select>
                   </Col>
                 </Form.Group>
@@ -492,29 +406,7 @@ const DiceGame = () => {
                   </Col>
                 </Form.Group>
 
-                {/* Roll Button */}
-                <Button
-                  variant="success"
-                  className="dice-roll-btn"
-                  type="submit"
-                  disabled={isRolling || !betAmount || betAmount <= 0 || betAmount > userBalance}
-                  onClick={(e) => {
-                    const x = e.clientX / window.innerWidth;
-                    const y = e.clientY / window.innerHeight;
-                    setClickPosition({ x, y });
-                  }}
-                >
-                  {isRolling ? (
-                    <div className="d-flex align-items-center justify-content-center">
-                      <div className="position-relative me-3">
-                        <Spinner animation="border" size="sm" role="status" aria-hidden="true" className="justify-content-center align-items-center" style={{ top: '-3px', left: '-3px' }} />
-                      </div>
-                      <span>Rolling...</span>
-                    </div>
-                  ) : (
-                    'Roll Dice'
-                  )}
-                </Button>
+
               </Form>
             </Card.Body>
           </Card>
@@ -528,20 +420,30 @@ const DiceGame = () => {
               {history.length > 0 ? (
                 <div>
                   {history.map((bet) => (
-                    <div key={bet.id || `bet-${Math.random()}`} className="history-item">
+                    <div key={bet.id || `bet-${Math.random()}`} className="mb-2 p-2 border-bottom small">
                       <div className="d-flex justify-content-between">
                         <span>
-                          {bet.type === 'parimpar' 
-                            ? (bet.betValue || bet.valorApostado) 
-                            : `Number ${bet.betValue || bet.valorApostado}`}
+                        
+                          {bet.tipo === 'parimpar' ? bet.valorApostado : `Número ${bet.valorApostado}`}
+                       
+
                         </span>
-                        <Badge bg={bet.status === 'WON' ? 'success' : 'danger'}>
-                          {bet.status === 'WON' ? 'WON' : 'LOST'}
-                          ${bet.winloss ? Math.abs(bet.winloss).toFixed(2) : bet.amount.toFixed(2)}
+                        <Badge   style={{
+                                    display: 'flex',
+                                    alignItems: 'center'// opcional: separa el texto del monto
+                                  }} bg={bet.estado === 'GANADA' ? 'success' : 'danger'}>
+                          {bet.estado === 'GANADA' ? 'WON' : 'LOST'}
+                          ${bet.winloss ? Math.abs(bet.winloss).toFixed(2) : bet.cantidad.toFixed(2)}
                         </Badge>
                       </div>
-                      <div className="history-date">
-                        {bet.betDate ? new Date(bet.betDate).toLocaleString() : 'Unknown date'}
+                      <div
+                          className="text-white"
+                          style={{
+                            fontSize: '0.8em',
+                            marginTop: '0.5rem' // or '8px' or whatever spacing you prefer
+                          }}
+>
+                        {bet.fechaApuesta ? new Date(bet.fechaApuesta).toLocaleString() : 'Unknown date'}
                       </div>
                     </div>
                   ))}

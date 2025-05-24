@@ -2,9 +2,9 @@ import api from './api';
 import { jwtDecode } from 'jwt-decode';
 
 const AUTH_ENDPOINTS = {
-  LOGIN: '/users/login',
-  REGISTER: '/users/register',
-  CURRENT_USER: '/users/me',
+  LOGIN: '/usuarios/login',
+  REGISTER: '/usuarios/registrar',
+  CURRENT_USER: '/usuarios/me',
 };
 
 // Helper to store user data in localStorage
@@ -28,8 +28,7 @@ const authService = {
       setUserData(token, user);
       return user;
     } catch (error) {
-      console.error('Login error:', error.response || error);
-      throw error; // Pass the full error object to allow components to inspect response status
+      throw error.response?.data || { message: 'Login failed' };
     }
   },
 
@@ -39,15 +38,7 @@ const authService = {
       const response = await api.post(AUTH_ENDPOINTS.REGISTER, userData);
       return response.data;
     } catch (error) {
-      console.error('Registration error:', error.response || error);
-      
-      // Format validation errors for easier handling in components
-      if (error.response && error.response.data && error.response.data.errors) {
-        // Preserve the original error structure but add a formatted property
-        error.validationErrors = error.response.data.errors;
-      }
-      
-      throw error; // Pass the full error object to allow components to inspect response details
+      throw error.response?.data || { message: 'Registration failed' };
     }
   },
 
@@ -102,16 +93,21 @@ const authService = {
       if (userData.balance !== undefined && userData.balance !== null && typeof userData.balance !== 'object') {
         return Number(userData.balance);
       }
-          
+      
+      // If we have saldo in localStorage, return it
+      if (userData.saldo !== undefined && userData.saldo !== null && typeof userData.saldo !== 'object') {
+        return Number(userData.saldo);
+      }
+      
       // If we don't have a valid balance in localStorage, fetch from server
       if (userId) {
         try {
-          const response = await api.get(`/users/${userId}`);
+          const response = await api.get(`/usuarios/${userId}`);
           const user = response.data;
           
           // Update localStorage with the fetched user data
           if (user) {
-            const balanceValue = user.balance || 0;
+            const balanceValue = user.balance || user.saldo || 0;
             const numericBalance = Number(balanceValue);
             
             // Update the user data in localStorage
@@ -135,6 +131,7 @@ const authService = {
   // Logout user
   logout: () => {
     clearUserData();
+    window.location.href = '/login';
   },
 
   // Check if user is authenticated
@@ -162,25 +159,19 @@ const authService = {
   // Get user role
   getUserRole: () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    console.log('Getting user role, user object:', user);
-    // Check both role and rol properties
-    return user.role || user.rol || 'USER';
+    return user.rol || 'USER';
   },
 
   // Check if user is admin
   isAdmin: () => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    console.log('Checking if user is admin:', user);
-    // Check both role and rol properties for ADMIN value
-    return user.role === 'ADMIN' || user.rol === 'ADMIN';
+    return authService.getUserRole() === 'ADMIN';
   },
 
   // Get user data from localStorage
   getUserData: () => {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
-    console.log('User data from localStorage:', userData);
-    return userData;
+    return JSON.parse(localStorage.getItem('user') || '{}');
   }
 };
 
 export default authService;
+ 

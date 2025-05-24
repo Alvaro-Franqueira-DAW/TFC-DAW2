@@ -1,28 +1,24 @@
 import api from './api';
 
 const BET_ENDPOINTS = {
-  CREATE_BET: '/bets',
-  GET_USER_BETS: (userId) => `/bets/user/${userId}`,
-  GET_GAME_BETS: (gameId) => `/bets/game/${gameId}`,
-  GET_USER_GAME_BETS: (userId, gameId) => `/bets/user/${userId}/game/${gameId}`,
-  GET_BET_BY_ID: (betId) => `/bets/${betId}`,
+  CREATE_BET: '/apuestas',
+  GET_USER_BETS: (userId) => `/apuestas/usuario/${userId}`,
+  GET_GAME_BETS: (gameId) => `/apuestas/juego/${gameId}`,
+  GET_USER_GAME_BETS: (userId, gameId) => `/apuestas/usuario/${userId}/juego/${gameId}`,
+  GET_BET_BY_ID: (betId) => `/apuestas/${betId}`,
   // These paths are relative to the API_BASE_URL which already includes '/api'
-  PLACE_ROULETTE_BET: '/games/roulette/play',
-  PLACE_DICE_BET: '/dice/play', 
-  GET_BALANCE: (userId) => `/users/balance/${userId}`,
+  PLACE_ROULETTE_BET: '/juegos/ruleta/jugar',
+  PLACE_DICE_BET: '/dados/jugar', 
+  GET_BALANCE: (userId) => `/usuarios/balance/${userId}`,
 };
 
 const betService = {
   // Create a new bet (generic)
   createBet: async (betData) => {
     try {
-      console.log('Making API request to create bet:', betData);
       const response = await api.post(BET_ENDPOINTS.CREATE_BET, betData);
-      console.log('API response for create bet:', response.data);
       return response.data;
     } catch (error) {
-      console.error('API error creating bet:', error);
-      console.error('Error details:', error.response?.data || 'No response data');
       throw error.response?.data || { message: 'Failed to place bet' };
     }
   },
@@ -34,9 +30,11 @@ const betService = {
       
       // Select the appropriate endpoint based on game type
       switch (gameType.toLowerCase()) {
+        case 'ruleta':
         case 'roulette':
           endpoint = BET_ENDPOINTS.PLACE_ROULETTE_BET;
           break;
+        case 'dados':
         case 'dice':
           endpoint = BET_ENDPOINTS.PLACE_DICE_BET;
           break;
@@ -52,58 +50,6 @@ const betService = {
     }
   },
 
-  // Helper to normalize bet properties from Spanish to English
-  normalizeBetProperties: (bet) => {
-    // Spanish to English property mappings
-    const propertyMappings = {
-      juegoId: 'gameId',
-      tipo: 'type',
-      tipoApuesta: 'type',
-      juego: 'game',
-      valorApostado: 'betValue',
-      valorGanador: 'winningValue',
-      fechaApuesta: 'betDate',
-      estado: 'status',
-      gananciaPerdida: 'winloss'
-    };
-    
-    // First handle special case for tipoApuesta
-    if (bet.tipoApuesta && !bet.tipo) {
-      bet.tipo = bet.tipoApuesta;
-    }
-    
-    // Map all Spanish properties to English
-    Object.entries(propertyMappings).forEach(([spanishProp, englishProp]) => {
-      if (bet[spanishProp] !== undefined && bet[englishProp] === undefined) {
-        bet[englishProp] = bet[spanishProp];
-      }
-    });
-    
-    // Handle slot machine game IDs - normalize both IDs 7 and 10 to be consistent
-    // This ensures all slot machine bets are recognized regardless of which ID was used
-    if (bet.gameId === 10 && bet.type === 'SLOT_MACHINE') {
-      bet.gameId = 7; // Use 7 as the canonical ID for slot machines
-    }
-    
-    // Special case for game object
-    if (bet.juego && !bet.game) {
-      bet.game = {
-        ...bet.juego,
-        // Ensure game has an English name
-        name: bet.juego.name || 
-              (bet.juego.nombre ? 
-              (bet.juego.id === 1 ? 'Roulette' : 
-               bet.juego.id === 2 ? 'Dice' : 
-               bet.juego.id === 9 ? 'Blackjack' :
-               bet.juego.id === 7 || bet.juego.id === 10 ? 'Slot Machine' :
-               bet.juego.id === 11 ? 'Sports Betting' : bet.juego.nombre) : 
-               'Unknown Game')
-      };
-    }
-    
-    return bet;
-  },
-
   // Get all bets for a user with detailed game information
   getUserBets: async (userId) => {
     try {
@@ -112,13 +58,51 @@ const betService = {
       
       // If we have bets, fetch detailed information for each
       if (Array.isArray(bets) && bets.length > 0) {
-        // Get unique game IDs from the bets that have juegoId or gameId
+        // Get unique game IDs from the bets that have juegoId
         const gameIds = [...new Set(bets
-          .filter(bet => bet.gameId || bet.juegoId)
-          .map(bet => bet.gameId || bet.juegoId))];
+          .filter(bet => bet.juegoId)
+          .map(bet => bet.juegoId))];
         
-        // Process each bet to normalize properties
-        const processedBets = bets.map(bet => betService.normalizeBetProperties(bet));
+        // For bets without juegoId, try to determine from bet type
+        const processedBets = await Promise.all(bets.map(async (bet) => {
+          // If bet already has juego object, return as is
+          if (bet.juego) return bet;
+          
+          // If bet has juegoId but no juego object, fetch game details
+          if (bet.juegoId) {
+            try {
+              // Attempt to get game details - in a real app, you'd have an API for this
+              // For now, we'll create a placeholder based on known game IDs
+              bet.juego = {
+                id: bet.juegoId,
+                nombre: bet.juegoId === 1 ? 'Ruleta' : bet.juegoId === 2 ? 'Dados' : `Game ${bet.juegoId}`
+              };
+            } catch (err) {
+              console.error(`Failed to fetch game details for game ID ${bet.juegoId}:`, err);
+            }
+          } 
+          // If no juegoId, determine from bet type
+          else {
+            // Normalize property names
+            const tipo = bet.tipoApuesta || bet.tipo;
+            
+            // Determine game type based on bet properties
+            if (tipo === 'parimpar' || tipo === 'numero') {
+              bet.juegoId = 2; // Dice game ID
+              bet.juego = { id: 2, nombre: 'Dados' };
+            } else if (tipo === 'NUMERO' || tipo === 'COLOR' || tipo === 'PARIDAD') {
+              bet.juegoId = 1; // Roulette game ID
+              bet.juego = { id: 1, nombre: 'Ruleta' };
+            }
+          }
+          
+          // Normalize property names for UI consistency
+          if (bet.tipoApuesta && !bet.tipo) {
+            bet.tipo = bet.tipoApuesta;
+          }
+          
+          return bet;
+        }));
         
         return processedBets;
       }
@@ -157,9 +141,9 @@ const betService = {
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch user game bets' };
     }
-  },
-
-  // Get user balance
+  }
+,
+// Get user balance
   getUserBalance: async (userId) => {
     try {
       const response = await api.get(BET_ENDPOINTS.GET_BALANCE(userId));

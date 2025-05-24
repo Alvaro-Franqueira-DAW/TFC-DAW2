@@ -1,84 +1,37 @@
--- Create the games table if it doesn't exist
-CREATE TABLE IF NOT EXISTS games (
-    id SERIAL PRIMARY KEY, -- Or BIGSERIAL, or however you define your ID in the Game entity
-    name VARCHAR(255) UNIQUE NOT NULL,
-    description TEXT
-    -- Add any other columns your 'Game' entity has (e.g., min_bet, max_bet, etc.)
-);
+--DROP TABLE IF EXISTS apuesta CASCADE;
+--DROP TABLE IF EXISTS juegos CASCADE;
+--DROP TABLE IF EXISTS usuarios CASCADE;
 
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,         -- Or BIGSERIAL
-    username VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL, -- Stores the hashed password
-    role VARCHAR(50) NOT NULL,      -- e.g., 'USER', 'ADMIN'
-    balance DECIMAL(19, 2) DEFAULT 0.00,
-    registration_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    -- any other columns
-);
+--delete table juegos;
+--nsert only Roulette and Dice into games
+ --INSERT INTO juegos (name, description) VALUES
+--('Roulette', 'Classic roulette game with numbers from 0 to 36'),
+ --('Dice', 'Betting game involving dice rolls') 
+ --ON CONFLICT (name) DO NOTHING; 
 
-INSERT INTO users (username, email, password, role, balance, registration_date)
-SELECT
-    'admin',
-    'adsfadsf@aasdf.co',
-    '$2a$10$SwAhHi8PnTVr4llwyw1RF.EFGB.5jt9uLV4sd1Z8LYS/KxXhq5iKu', -- Hashed password from your example
-    'ADMIN',
-    24878.40,
-    '2025-04-16 12:19:12.997221+00'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
 
--- Insert Roulette if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Roulette', 'A classic casino game where players bet on where the ball will land on the spinning wheel.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Roulette');
+-- Insertar solo Ruleta y Dados en juegos
+--INSERT INTO juegos (nombre, descripcion) VALUES
+--('Ruleta', 'Juego clásico de ruleta con números del 0 al 36'),
+--('Dados', 'Juego de apuestas con lanzamiento de dados')
+--ON CONFLICT (nombre) DO NOTHING;
+-- Insertar datos en usuarios (reducido a 3 usuarios)
+--INSERT INTO usuarios (username, password, email, balance, fecha_registro, rol) VALUES
+--('jugador1', '$2a$10$xJwL5v5z3J6f5ZJ7Q8bB0eKZ9vY6wX0yR2sA3bC4d5E6f7G8h9i0j', 'jugador1@example.com', 1500.00, '2023-01-15 10:30:00', 'USER'),
+--('jugador2', '$2a$10$yKvL6w4z5J7f6Z8Q9cC1dL0vX1yR2sA3bC4d5E6f7G8h9i0j1k2l', 'jugador2@example.com', 2500.50, '2023-02-20 14:45:00', 'USER'),
+--('admin', 'password', 'admin@casino.com', 10000.00, '2023-01-01 09:00:00', 'ADMIN')
+--ON CONFLICT (email) DO NOTHING;
+-- Insertar apuestas solo para Ruleta y Dados
+--INSERT INTO apuesta (cantidad, tipo_apuesta, valor_apostado, valor_ganador, fecha_apuesta, estado, winloss, usuario_id, juego_id) VALUES
+-- Apuestas en Ruleta (juego_id = 1)
+--(100.00, 'color', 'rojo', 'rojo', '2023-05-01 12:30:00', 'ganada', 100.00, 1, 1),
+--(50.00, 'par/impar', 'par', 'impar', '2023-05-01 13:45:00', 'perdida', -50.00, 1, 1),
+--(75.00, 'número', '17', '17', '2023-05-02 16:10:00', 'ganada', 2625.00, 2, 1),
+--(60.00, 'par/impar', 'impar', 'impar', '2023-05-06 11:40:00', 'ganada', 60.00, 2, 1),
 
--- Insert Dice if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Dice', 'An exciting game of chance and strategy involving bets on the outcome of dice rolls.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Dice');
-
--- Insert Filler Game Alpha if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Filler Game Alpha', 'A generic title designed to occupy a specific position in the database ID sequence.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Sports betting');
-
--- Insert Filler Game Beta if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Filler Game Beta', 'A temporary placeholder, essential for initial setup and the desired order of identifiers.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Sports betting');
-
--- Insert Filler Game Gamma if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Filler Game Gamma', 'Used to fill gaps in the games table, ensuring consistency in ID assignment.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Sports betting');
-
--- Insert Filler Game Delta if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Filler Game Delta', 'A structural element in the database, facilitating the establishment of controlled ID numbering.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Sports betting');
-
--- Insert Slot Machine if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Slot Machine', 'A vibrant and popular slot machine, where luck determines prizes with each spin of its reels.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Slot Machine');
-
--- Insert Filler Game Epsilon if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Filler Game Epsilon', 'Designed to complete the ID sequence, allowing for a specific organization of game records.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Sports betting');
-
--- Insert Blackjack if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Blackjack', 'A popular card game where players try to reach 21 points without going over, competing against the dealer.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Blackjack');
-
--- Insert Poker if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Poker', 'A strategic card game that combines skill, bluffing, and stake management to win the pot.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Poker');
-
--- Insert Sports betting if it doesn't exist
-INSERT INTO games (name, description)
-SELECT 'Sports betting', 'The practice of wagering money on the outcome of sporting events, offering dynamic odds and various betting modalities.'
-WHERE NOT EXISTS (SELECT 1 FROM games WHERE name = 'Sports betting');
+-- Apuestas en Dados (juego_id = 2)
+--(120.00, 'numero', '7', '7', '2023-05-05 20:15:00', 'ganada', 4200.00, 1, 2),
+--(80.00, 'numero', '12', '7', '2023-05-04 14:25:00', 'perdida', -80.00, 3, 2),
+--(90.00, 'mitad', 'mayor', 'menor', '2023-05-06 13:50:00', 'perdida', -90.00, 2, 2)
+--ON CONFLICT (usuario_id, fecha_apuesta, cantidad) DO NOTHING;
 

@@ -1,10 +1,10 @@
 package udaw.casino.service;
 
-import udaw.casino.model.Game;
+import udaw.casino.model.Juego;
 import udaw.casino.model.RankingType;
-import udaw.casino.model.User;
-import udaw.casino.repository.BetRepository;
-import udaw.casino.repository.UserRepository;
+import udaw.casino.model.Usuario;
+import udaw.casino.repository.ApuestaRepository;
+import udaw.casino.repository.UsuarioRepository;
 
 import org.springframework.stereotype.Service;
 
@@ -15,303 +15,201 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Service for calculating user rankings on-demand without persistent storage.
- * Provides functionality to calculate various types of rankings:
- * - Global rankings (across all games)
- * - Game-specific rankings
- * - Individual user rankings
- * 
- * Rankings are calculated based on different metrics:
- * - Total amount bet
- * - Win rate
- * - Total profit/losses
- * - Game-specific statistics
+ * Service for calculating rankings on-demand without storing them in the database.
+ * This replaces the previous approach of maintaining a separate Ranking entity.
  */
 @Service
+
 public class RankingCalculationService {
 
-    private final BetRepository betRepository;
-    private final UserRepository userRepository;
+    private static final Logger log = LoggerFactory.getLogger(RankingCalculationService.class);
 
-    public RankingCalculationService(BetRepository betRepository, UserRepository userRepository) {
-        this.betRepository = betRepository;
-        this.userRepository = userRepository;
+    private final ApuestaRepository apuestaRepository;
+    private final UsuarioRepository usuarioRepository;
+
+    public RankingCalculationService(ApuestaRepository apuestaRepository, UsuarioRepository usuarioRepository) {
+        this.apuestaRepository = apuestaRepository;
+        this.usuarioRepository = usuarioRepository;
     }
 
     /**
-     * Represents a single entry in a ranking list.
-     * Contains user information, game context (if applicable),
-     * ranking type, calculated score, and position in the ranking.
+     * Represents a ranking entry with user information and score.
      */
     @Getter
     @Setter
     public static class RankingEntry {
-        private User user;
-        private Game game;
-        private RankingType type;
-        private Double score;
-        private Integer position;
+        private Usuario usuario;
+        private Juego juego;
+        private RankingType tipo;
+        private Double valor;
+        private Integer posicion;
 
-        public RankingEntry(User user, Game game, RankingType type, Double score) {
-            this.user = user;
-            this.game = game;
-            this.type = type;
-            this.score = score;
+        public RankingEntry(Usuario usuario, Juego juego, RankingType tipo, Double valor) {
+            this.usuario = usuario;
+            this.juego = juego;
+            this.tipo = tipo;
+            this.valor = valor;
         }
+
     }
 
     /**
-     * Calculates global rankings for a specific ranking type.
-     * Global rankings are calculated across all users and games.
-     * 
-     * @param type The type of ranking to calculate
-     * @return List of RankingEntry objects sorted by score in descending order
+     * Gets the global ranking list for a specific type.
+     *
+     * @param tipo The type of ranking.
+     * @return List of RankingEntry objects ordered by score.
      */
-    public List<RankingEntry> getRankingByType(RankingType type) {
-
-        // Validate ranking type
-        if (type == RankingType.BY_GAME_AMOUNT || type == RankingType.BY_GAME_WIN_RATE || 
-            type == RankingType.BY_GAME_PROFIT || type == RankingType.BY_GAME_LOSSES) {
-            return new ArrayList<>();
-        }
+    public List<RankingEntry> obtenerRankingPorTipo(RankingType tipo) {
+        log.info("Calculating on-demand ranking for type: {}", tipo);
         
-        // Calculate scores for all users
-        List<User> users = userRepository.findAll();
+        List<Usuario> usuarios = usuarioRepository.findAll();
         List<RankingEntry> rankings = new ArrayList<>();
         
-        for (User user : users) {
-            Double score = calculateScore(user, type, null);
-            rankings.add(new RankingEntry(user, null, type, score));
+        for (Usuario usuario : usuarios) {
+            Double score = calcularScore(usuario, tipo, null);
+            rankings.add(new RankingEntry(usuario, null, tipo, score));
         }
         
-        // Sort and assign positions
-        rankings.sort(Comparator.comparing(RankingEntry::getScore).reversed());
+        // Sort by score (descending) and assign positions
+        rankings.sort(Comparator.comparing(RankingEntry::getValor).reversed());
+        
         for (int i = 0; i < rankings.size(); i++) {
-            rankings.get(i).setPosition(i + 1);
+            rankings.get(i).setPosicion(i + 1);
         }
         
         return rankings;
     }
 
     /**
-     * Calculates game-specific rankings for a particular game and ranking type.
-     * 
-     * @param type The type of ranking to calculate
-     * @param game The game to calculate rankings for
-     * @return List of RankingEntry objects sorted by score in descending order
+     * Gets the ranking list for a specific game and ranking type.
+     *
+     * @param tipo The type of ranking.
+     * @param juego The game.
+     * @return List of RankingEntry objects ordered by score.
      */
-    public List<RankingEntry> getRankingByGameAndType(RankingType type, Game game) {
-        List<User> users = userRepository.findAll();
+    public List<RankingEntry> obtenerRankingPorJuegoYTipo(RankingType tipo, Juego juego) {
+        log.info("Calculating on-demand ranking for type: {} and game: {}", tipo, juego.getNombre());
+        
+        List<Usuario> usuarios = usuarioRepository.findAll();
         List<RankingEntry> rankings = new ArrayList<>();
         
-        // Calculate scores for all users in the specific game
-        for (User user : users) {
-            Double score = calculateScore(user, type, game);
-            rankings.add(new RankingEntry(user, game, type, score));
+        for (Usuario usuario : usuarios) {
+            Double score = calcularScore(usuario, tipo, juego);
+            rankings.add(new RankingEntry(usuario, juego, tipo, score));
         }
         
-        // Sort and assign positions
-        rankings.sort(Comparator.comparing(RankingEntry::getScore).reversed());
+        // Sort by score (descending) and assign positions
+        rankings.sort(Comparator.comparing(RankingEntry::getValor).reversed());
+        
         for (int i = 0; i < rankings.size(); i++) {
-            rankings.get(i).setPosition(i + 1);
+            rankings.get(i).setPosicion(i + 1);
         }
         
         return rankings;
     }
 
     /**
-     * Calculates all rankings for a specific user.
-     * Includes both global and game-specific rankings.
-     * 
-     * @param userId The ID of the user to calculate rankings for
-     * @return List of RankingEntry objects containing all rankings for the user
+     * Gets the rankings for a specific user.
+     *
+     * @param usuarioId The user ID.
+     * @return List of RankingEntry objects for the user.
      */
-    public List<RankingEntry> getUserRankings(Long userId) {
-        // Find user
-        User user;
-        try {
-            user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-        } catch (Exception e) {
-            return new ArrayList<>();
-        }
+    public List<RankingEntry> obtenerRankingsDelUsuario(Long usuarioId) {
+        log.info("Calculating on-demand rankings for user ID: {}", usuarioId);
+        
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         
         List<RankingEntry> rankings = new ArrayList<>();
         
-        // Calculate global rankings
-        for (RankingType type : RankingType.values()) {
-            if (type != RankingType.BY_GAME_AMOUNT && type != RankingType.BY_GAME_WIN_RATE 
-                && type != RankingType.BY_GAME_PROFIT && type != RankingType.BY_GAME_LOSSES) {
-                try {
-                    Double score = calculateScore(user, type, null);
-                    RankingEntry entry = new RankingEntry(user, null, type, score);
-                    
-                    // Calculate position in global ranking
-                    List<RankingEntry> fullRanking = getRankingByType(type);
-                    for (int i = 0; i < fullRanking.size(); i++) {
-                        if (fullRanking.get(i).getUser().getId().equals(user.getId())) {
-                            entry.setPosition(i + 1);
-                            break;
-                        }
+        // Add global rankings
+        for (RankingType tipo : RankingType.values()) {
+            if (tipo != RankingType.BY_GAME_WINS && tipo != RankingType.BY_GAME_WIN_RATE) { // Exclude game-specific rankings
+                Double score = calcularScore(usuario, tipo, null);
+                RankingEntry entry = new RankingEntry(usuario, null, tipo, score);
+                
+                // Calculate position
+                List<RankingEntry> allRankings = obtenerRankingPorTipo(tipo);
+                for (int i = 0; i < allRankings.size(); i++) {
+                    if (allRankings.get(i).getUsuario().getId().equals(usuario.getId())) {
+                        entry.setPosicion(i + 1);
+                        break;
                     }
-                    
-                    rankings.add(entry);
-                } catch (Exception e) {
-                    // Exception handling without logging
                 }
+                
+                rankings.add(entry);
             }
         }
         
-        // Calculate game-specific rankings
-        List<Game> games;
-        try {
-            games = betRepository.findDistinctGamesByUserId(userId);
-        } catch (Exception e) {
-            games = new ArrayList<>();
-        }
-        
-        // Calculate rankings for each game
-        for (Game game : games) {
-            // Calculate BY_GAME_AMOUNT ranking
-            try {
-                Double winsScore = calculateScore(user, RankingType.BY_GAME_AMOUNT, game);
-                RankingEntry winsEntry = new RankingEntry(user, game, RankingType.BY_GAME_AMOUNT, winsScore);
-                
-                // Calculate position
-                List<RankingEntry> allWinsRankings = getRankingByGameAndType(RankingType.BY_GAME_AMOUNT, game);
-                for (int i = 0; i < allWinsRankings.size(); i++) {
-                    if (allWinsRankings.get(i).getUser().getId().equals(user.getId())) {
-                        winsEntry.setPosition(i + 1);
-                        break;
-                    }
+        // Add game-specific rankings
+        List<Juego> juegos = apuestaRepository.findDistinctJuegosByUsuarioId(usuarioId);
+        for (Juego juego : juegos) {
+            Double score = calcularScore(usuario, RankingType.BY_GAME_WINS, juego);
+            RankingEntry entry = new RankingEntry(usuario, juego, RankingType.BY_GAME_WINS, score);
+            
+            // Calculate position
+            List<RankingEntry> allRankings = obtenerRankingPorJuegoYTipo(RankingType.BY_GAME_WINS, juego);
+            for (int i = 0; i < allRankings.size(); i++) {
+                if (allRankings.get(i).getUsuario().getId().equals(usuario.getId())) {
+                    entry.setPosicion(i + 1);
+                    break;
                 }
-                rankings.add(winsEntry);
-            } catch (Exception e) {
-                // Exception handling without logging
             }
             
-            // Calculate BY_GAME_LOSSES ranking
-            try {
-                Double lossesScore = calculateScore(user, RankingType.BY_GAME_LOSSES, game);
-                RankingEntry lossesEntry = new RankingEntry(user, game, RankingType.BY_GAME_LOSSES, lossesScore);
-                
-                // Calculate position
-                List<RankingEntry> allLossesRankings = getRankingByGameAndType(RankingType.BY_GAME_LOSSES, game);
-                for (int i = 0; i < allLossesRankings.size(); i++) {
-                    if (allLossesRankings.get(i).getUser().getId().equals(user.getId())) {
-                        lossesEntry.setPosition(i + 1);
-                        break;
-                    }
-                }
-                rankings.add(lossesEntry);
-            } catch (Exception e) {
-                // Exception handling without logging
-            }
-            
-            // Calculate BY_GAME_WIN_RATE ranking
-            try {
-                Double winRateScore = calculateScore(user, RankingType.BY_GAME_WIN_RATE, game);
-                RankingEntry winRateEntry = new RankingEntry(user, game, RankingType.BY_GAME_WIN_RATE, winRateScore);
-                
-                // Calculate position
-                List<RankingEntry> allWinRateRankings = getRankingByGameAndType(RankingType.BY_GAME_WIN_RATE, game);
-                for (int i = 0; i < allWinRateRankings.size(); i++) {
-                    if (allWinRateRankings.get(i).getUser().getId().equals(user.getId())) {
-                        winRateEntry.setPosition(i + 1);
-                        break;
-                    }
-                }
-                rankings.add(winRateEntry);
-            } catch (Exception e) {
-                // Exception handling without logging
-            }
-            
-            // Calculate BY_GAME_PROFIT ranking
-            try {
-                Double profitScore = calculateScore(user, RankingType.BY_GAME_PROFIT, game);
-                RankingEntry profitEntry = new RankingEntry(user, game, RankingType.BY_GAME_PROFIT, profitScore);
-                
-                // Calculate position
-                List<RankingEntry> allProfitRankings = getRankingByGameAndType(RankingType.BY_GAME_PROFIT, game);
-                for (int i = 0; i < allProfitRankings.size(); i++) {
-                    if (allProfitRankings.get(i).getUser().getId().equals(user.getId())) {
-                        profitEntry.setPosition(i + 1);
-                        break;
-                    }
-                }
-                rankings.add(profitEntry);
-            } catch (Exception e) {
-                // Exception handling without logging
-            }
+            rankings.add(entry);
         }
         
         return rankings;
     }
 
     /**
-     * Calculates the score for a user based on the ranking type and game context.
-     * 
-     * @param user The user to calculate the score for
-     * @param type The type of ranking to calculate
-     * @param game The game context (null for global rankings)
-     * @return The calculated score
+     * Calculates the score for a given user, ranking type, and optionally game.
+     *
+     * @param usuario The user.
+     * @param tipo The ranking type.
+     * @param juego The game (optional).
+     * @return The calculated score.
      */
-    private Double calculateScore(User user, RankingType type, Game game) {
-        switch (type) {
+    private Double calcularScore(Usuario usuario, RankingType tipo, Juego juego) {
+        switch (tipo) {
             case OVERALL_PROFIT:
                 // Returns Double or 0.0 - SAFE
-                return betRepository.calculateTotalProfitForUser(user.getId());
-
-            case TOP_LOSERS:
-                // Negate the profit to rank users with most negative profit first
-                Double negativeProfit = betRepository.calculateTotalProfitForUser(user.getId());
-                return negativeProfit != null ? -negativeProfit : 0.0;
+                return apuestaRepository.calculateTotalProfitForUser(usuario.getId());
 
             case TOTAL_BETS_AMOUNT:
                 // Returns Double or 0.0 - SAFE
-                return betRepository.calculateTotalBetAmountForUser(user.getId());
+                return apuestaRepository.calculateTotalBetAmountForUser(usuario.getId());
 
-            case BY_GAME_AMOUNT:
-                if (game == null || game.getId() == null) { // Added null check for game.getId() just in case
-                    throw new IllegalArgumentException("Game and Game ID cannot be null for BY_GAME_AMOUNT ranking type");
+            case BY_GAME_WINS:
+                if (juego == null || juego.getId() == null) { // Added null check for juego.getId() just in case
+                    throw new IllegalArgumentException("Game and Game ID cannot be null for BY_GAME_WINS ranking type");
                 }
-                // Calculate total amount bet for specific game - returns Double or 0.0
-                return betRepository.calculateTotalBetAmountForUserAndGame(user.getId(), game.getId());
-
-            case BY_GAME_LOSSES:
-                if (game == null || game.getId() == null) {
-                    throw new IllegalArgumentException("Game and Game ID cannot be null for BY_GAME_LOSSES ranking type");
-                }
-                // Calculate the total money lost (negative profit becomes positive loss)
-                Double lossProfit = betRepository.calculateTotalProfitForUserAndGame(user.getId(), game.getId());
-                // If profit is negative, it's a loss, so return the absolute value
-                return lossProfit != null ? -lossProfit : 0.0;
+                // Returns Long or 0L - repo method returns Long
+                Long wins = apuestaRepository.countWinsByUserAndGame(usuario.getId(), juego.getId());
+                // Implicit conversion from Long to Double might happen here,
+                // but explicitly converting is safer:
+                return wins != null ? wins.doubleValue() : 0.0; // <--- SUGGESTED CHANGE
 
             case WIN_RATE:
                 // Returns Double (0.0 to 1.0) or 0.0 - SAFE
-                Double winRate = betRepository.calculateWinRateForUser(user.getId());
+                Double winRate = apuestaRepository.calculateWinRateForUser(usuario.getId());
                 return winRate != null ? winRate * 100 : 0.0; // Convert to percentage
 
             case BY_GAME_WIN_RATE:
-                if (game == null || game.getId() == null) { // Added null check for game.getId() just in case
+                if (juego == null || juego.getId() == null) { // Added null check for juego.getId() just in case
                    throw new IllegalArgumentException("Game and Game ID cannot be null for BY_GAME_WIN_RATE ranking type");
                 }
                 // Returns Double (0.0 to 1.0) or 0.0 - SAFE
-                Double gameWinRate = betRepository.calculateWinRateForUserAndGame(user.getId(), game.getId());
+                Double gameWinRate = apuestaRepository.calculateWinRateForUserAndGame(usuario.getId(), juego.getId());
                 return gameWinRate != null ? gameWinRate * 100 : 0.0; // Convert to percentage
-                
-            case BY_GAME_PROFIT:
-                if (game == null || game.getId() == null) {
-                    throw new IllegalArgumentException("Game and Game ID cannot be null for BY_GAME_PROFIT ranking type");
-                }
-                // Returns Double or 0.0 - SAFE
-                Double gameProfit = betRepository.calculateTotalProfitForUserAndGame(user.getId(), game.getId());
-                return gameProfit != null ? gameProfit : 0.0;
 
             default:
-                throw new IllegalArgumentException("Unsupported ranking type: " + type);
+                log.error("Unsupported RankingType encountered: {}", tipo);
+                throw new IllegalArgumentException("Unsupported ranking type: " + tipo);
         }
     }
 }

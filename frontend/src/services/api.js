@@ -28,14 +28,9 @@ api.interceptors.response.use(
   (error) => {
     // Handle 401 Unauthorized errors (token expired)
     if (error.response && error.response.status === 401) {
-      // Don't redirect automatically if this is a login/register request
-      const isAuthRequest = error.config.url.includes('login') || error.config.url.includes('register');
-      
-      if (!isAuthRequest) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-      }
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }

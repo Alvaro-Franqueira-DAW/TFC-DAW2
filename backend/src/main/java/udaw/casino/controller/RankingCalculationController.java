@@ -1,9 +1,9 @@
 package udaw.casino.controller;
 
 import udaw.casino.exception.ResourceNotFoundException;
-import udaw.casino.model.Game;
+import udaw.casino.model.Juego;
 import udaw.casino.model.RankingType;
-import udaw.casino.service.GameService;
+import udaw.casino.service.JuegoService;
 import udaw.casino.service.RankingCalculationService;
 import udaw.casino.service.RankingCalculationService.RankingEntry;
 
@@ -17,20 +17,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 
-/**
- * Controller for managing ranking calculations in the casino system.
- * Provides endpoints for retrieving various types of rankings, including global and game-specific rankings.
- */
 @RestController
 @RequestMapping("/api/rankings/v2") // New API version for calculated rankings
 public class RankingCalculationController {
 
     private final RankingCalculationService rankingCalculationService;
-    private final GameService gameService;
+    private final JuegoService juegoService;
 
-    public RankingCalculationController(RankingCalculationService rankingCalculationService, GameService gameService) {
+    public RankingCalculationController(RankingCalculationService rankingCalculationService, JuegoService juegoService) {
         this.rankingCalculationService = rankingCalculationService;
-        this.gameService = gameService;
+        this.juegoService = juegoService;
     }
 
     /**
@@ -39,15 +35,14 @@ public class RankingCalculationController {
      * @return ResponseEntity containing a map with all ranking types and their entries.
      */
     @GetMapping
-    public ResponseEntity<Map<String, List<RankingEntry>>> getAllRankings() {
+    public ResponseEntity<Map<String, List<RankingEntry>>> obtenerTodosLosRankings() {
         Map<String, List<RankingEntry>> allRankings = new HashMap<>();
         
         // Get global rankings for each type
-        for (RankingType type : RankingType.values()) {
-            if (type != RankingType.BY_GAME_AMOUNT && type != RankingType.BY_GAME_WIN_RATE 
-                && type != RankingType.BY_GAME_PROFIT && type != RankingType.BY_GAME_LOSSES) { // Skip game-specific rankings
-                List<RankingEntry> rankings = rankingCalculationService.getRankingByType(type);
-                allRankings.put(type.name(), rankings);
+        for (RankingType tipo : RankingType.values()) {
+            if (tipo != RankingType.BY_GAME_WINS && tipo != RankingType.BY_GAME_WIN_RATE) { // Skip game-specific rankings
+                List<RankingEntry> rankings = rankingCalculationService.obtenerRankingPorTipo(tipo);
+                allRankings.put(tipo.name(), rankings);
             }
         }
         
@@ -57,81 +52,58 @@ public class RankingCalculationController {
     /**
      * Gets the global ranking list for a specific type (e.g., OVERALL_PROFIT, TOTAL_BETS_AMOUNT).
      *
-     * @param type The type of ranking.
+     * @param tipo The type of ranking.
      * @return ResponseEntity containing the list of RankingEntry objects or an error.
      */
-    @GetMapping("/type/{type}")
-    public ResponseEntity<List<RankingEntry>> getGlobalRankingByType(@PathVariable("type") RankingType type) {
+    @GetMapping("/tipo/{tipo}")
+    public ResponseEntity<List<RankingEntry>> obtenerRankingGlobalPorTipo(@PathVariable("tipo") RankingType tipo) {
         // Basic validation: Ensure the type is not game-specific if called without a game context
-        if (type == RankingType.BY_GAME_AMOUNT || type == RankingType.BY_GAME_WIN_RATE 
-            || type == RankingType.BY_GAME_PROFIT || type == RankingType.BY_GAME_LOSSES) {
+        if (tipo == RankingType.BY_GAME_WINS) {
             return ResponseEntity.badRequest().build(); // Indicate this endpoint isn't for game-specific types alone
         }
-        
-        // Process the ranking based on type
-        try {
-            List<RankingEntry> rankings = rankingCalculationService.getRankingByType(type);
-            return ResponseEntity.ok(rankings);
-        } catch (Exception e) {
-            e.printStackTrace(); // or use a logger
-            // Return 200 OK with empty list instead of error status to prevent frontend crashes
-            return ResponseEntity.ok(List.of());
-        }
+        List<RankingEntry> rankings = rankingCalculationService.obtenerRankingPorTipo(tipo);
+        return ResponseEntity.ok(rankings);
     }
 
     /**
      * Gets the ranking list for a specific game and ranking type.
      *
-     * @param gameId The ID of the game.
-     * @param type    The type of ranking (e.g., BY_GAME_AMOUNT).
+     * @param juegoId The ID of the game.
+     * @param tipo    The type of ranking (e.g., BY_GAME_WINS).
      * @return ResponseEntity containing the list of RankingEntry objects or an error.
      */
-    @GetMapping("/game/{gameId}/type/{type}")
-    public ResponseEntity<List<RankingEntry>> getRankingByGameAndType(
-            @PathVariable Long gameId,
-            @PathVariable RankingType type) {
+    @GetMapping("/juego/{juegoId}/tipo/{tipo}")
+    public ResponseEntity<List<RankingEntry>> obtenerRankingPorJuegoYTipo(
+            @PathVariable Long juegoId,
+            @PathVariable RankingType tipo) {
         try {
             // Fetch the game entity first
-            Game game = gameService.getGameById(gameId);
-            
-            // Explicitly log the request for debugging
-            System.out.println("Processing ranking request for game ID: " + gameId + ", type: " + type);
-            
-            // Get the rankings
-            List<RankingEntry> rankings = rankingCalculationService.getRankingByGameAndType(type, game);
+            Juego juego = juegoService.obtenerJuegoPorId(juegoId);
+            List<RankingEntry> rankings = rankingCalculationService.obtenerRankingPorJuegoYTipo(tipo, juego);
             return ResponseEntity.ok(rankings);
         } catch (ResourceNotFoundException e) {
             // Handle case where game is not found
-            System.out.println("Game not found for ID: " + gameId);
             return ResponseEntity.notFound().build();
         } catch (IllegalArgumentException e) {
             // Handle other errors like invalid type for game ranking
-            System.out.println("Invalid argument for game ID: " + gameId + ", type: " + type + " - " + e.getMessage());
             return ResponseEntity.badRequest().body(null); // Or return error message
-        } catch (Exception e) {
-            // Catch all other exceptions to prevent 500 errors
-            System.out.println("Error processing ranking for game ID: " + gameId + ", type: " + type);
-            e.printStackTrace();
-            // Return empty list with 200 OK instead of error
-            return ResponseEntity.ok(List.of());
         }
     }
 
     /**
      * Gets all rankings for a specific user.
      *
-     * @param userId The ID of the user.
+     * @param usuarioId The ID of the user.
      * @return ResponseEntity containing the list of RankingEntry objects or an error.
      */
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<RankingEntry>> getUserRankings(@PathVariable Long userId) {
+    @GetMapping("/usuario/{usuarioId}")
+    public ResponseEntity<List<RankingEntry>> obtenerRankingsDeUsuario(@PathVariable Long usuarioId) {
         try {
-            List<RankingEntry> rankings = rankingCalculationService.getUserRankings(userId);
+            List<RankingEntry> rankings = rankingCalculationService.obtenerRankingsDelUsuario(usuarioId);
             return ResponseEntity.ok(rankings);
         } catch (Exception e) {
             e.printStackTrace(); // or use a logger
-            // Return 200 OK with empty list instead of error status to prevent frontend crashes
-            return ResponseEntity.ok(List.of());
+            return ResponseEntity.status(500).body(null); // or return ResponseEntity.internalServerError().body(e.getMessage());
         }
     }
 }
